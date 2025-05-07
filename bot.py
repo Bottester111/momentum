@@ -7,6 +7,8 @@ from datetime import datetime
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
+bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="✅ Bot is live and sending messages!")
+exit()
 
 print("📡 Combined volume + bundle bot running...")
 
