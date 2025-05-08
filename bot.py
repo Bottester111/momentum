@@ -3,34 +3,24 @@ import time
 from datetime import datetime, timedelta
 
 TOKEN_CHECK_INTERVAL = 60  # seconds
-SUSTAINED_ALERT_THRESHOLD = 5000  # $5K per minute
-SUSTAINED_ALERT_DURATION = 15  # minutes
-LIQUIDITY_SPIKE_THRESHOLD = 10000  # Trigger if liquidity increases over $10K in one jump
+LIQUIDITY_SPIKE_THRESHOLD = 10000
+VOLUME_SPIKE_MULTIPLIER = 3  # spike must exceed 3x average rate
+MIN_BASE_VOLUME = 2000  # to trigger alerts for microcap tokens
 
 tracked_tokens = {}
 
-print("🔧 Bot is starting...")
+print("🚀 Advanced Momentum Bot Starting...")
 
 def get_recent_tokens():
-    # Placeholder: replace with real API call
+    # Replace with real API call
     return [{
         "address": "0x123",
-        "volume": 50000,
-        "liquidity": 25000,
+        "volume": 7000,
+        "liquidity": 22000,
         "tax": 5,
         "locked": True,
-        "liquidity_added_tx": True  # Simulated field to indicate if liquidity was added in 1 tx
+        "liquidity_added_tx": True
     }]
-
-def get_token_volume(token):
-    return token["volume"]
-
-def get_token_liquidity(token):
-    return token["liquidity"]
-
-def is_token_safe(token):
-    # Filter out tokens with high tax or not locked liquidity
-    return token["tax"] <= 10 and token["locked"] is True
 
 def send_alert(token, reason):
     print(f"🚨 ALERT for {token['address']}: {reason}")
@@ -42,50 +32,56 @@ def main():
 
         for token in tokens:
             addr = token["address"]
-            if not is_token_safe(token):
+            if token["tax"] > 10 or not token["locked"]:
                 continue
 
-            current_volume = get_token_volume(token)
-            current_liquidity = get_token_liquidity(token)
+            current_volume = token["volume"]
+            current_liquidity = token["liquidity"]
 
             if addr not in tracked_tokens:
                 tracked_tokens[addr] = {
                     "last_volume": current_volume,
                     "last_time": now,
-                    "sustained_start": None,
+                    "avg_rate": 0,
+                    "history": [],
                     "last_liquidity": current_liquidity
                 }
                 continue
 
-            last_volume = tracked_tokens[addr]["last_volume"]
-            last_time = tracked_tokens[addr]["last_time"]
-            last_liquidity = tracked_tokens[addr]["last_liquidity"]
+            data = tracked_tokens[addr]
+            last_volume = data["last_volume"]
+            last_time = data["last_time"]
+            last_liquidity = data["last_liquidity"]
+            minutes_elapsed = (now - last_time).total_seconds() / 60 or 1
 
             volume_delta = current_volume - last_volume
-            minutes_elapsed = (now - last_time).total_seconds() / 60
-            rate_per_minute = volume_delta / max(minutes_elapsed, 1)
+            rate_per_minute = volume_delta / minutes_elapsed
 
-            # 🔥 Sustained volume detection
-            if rate_per_minute >= SUSTAINED_ALERT_THRESHOLD:
-                if not tracked_tokens[addr]["sustained_start"]:
-                    tracked_tokens[addr]["sustained_start"] = now
-                else:
-                    duration = (now - tracked_tokens[addr]["sustained_start"]).total_seconds() / 60
-                    if duration >= SUSTAINED_ALERT_DURATION:
-                        send_alert(token, f"🔥 Sustained Volume > ${SUSTAINED_ALERT_THRESHOLD}/min for {int(duration)} minutes")
-                        tracked_tokens[addr]["sustained_start"] = None
-            else:
-                tracked_tokens[addr]["sustained_start"] = None
+            # Update rolling rate history
+            data["history"].append(rate_per_minute)
+            if len(data["history"]) > 5:
+                data["history"].pop(0)
 
-            # 💧 Liquidity spike detection (must be one large tx)
+            avg_rate = sum(data["history"]) / len(data["history"])
+            data["avg_rate"] = avg_rate
+
+            # 🔥 Adaptive spike logic
+            if avg_rate > 0 and rate_per_minute > avg_rate * VOLUME_SPIKE_MULTIPLIER and current_volume > MIN_BASE_VOLUME:
+                send_alert(token, f"🔥 Volume surged to {int(rate_per_minute)} $/min (> {VOLUME_SPIKE_MULTIPLIER}x avg)")
+
+            # 🧊 Microcap trigger
+            if current_volume < 15000 and volume_delta > 2000:
+                send_alert(token, "📈 Microcap token surged over $2K in volume!")
+
+            # 💧 Liquidity spike
             liquidity_delta = current_liquidity - last_liquidity
-            if liquidity_delta >= LIQUIDITY_SPIKE_THRESHOLD and token["locked"] and token.get("liquidity_added_tx"):
-                send_alert(token, f"💧 Liquidity Spike: +${liquidity_delta:,} (Locked in 1 tx)")
+            if liquidity_delta >= LIQUIDITY_SPIKE_THRESHOLD and token.get("liquidity_added_tx"):
+                send_alert(token, f"💧 Liquidity spike: +${liquidity_delta:,} added (locked)")
 
-            # Update tracking
-            tracked_tokens[addr]["last_volume"] = current_volume
-            tracked_tokens[addr]["last_time"] = now
-            tracked_tokens[addr]["last_liquidity"] = current_liquidity
+            # Update tracking data
+            data["last_volume"] = current_volume
+            data["last_time"] = now
+            data["last_liquidity"] = current_liquidity
 
         time.sleep(TOKEN_CHECK_INTERVAL)
 
