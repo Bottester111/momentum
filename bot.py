@@ -2,6 +2,10 @@ import requests
 import time
 from datetime import datetime, timedelta
 
+# --- Telegram Config ---
+TELEGRAM_BOT_TOKEN = "7959789156:AAGKNNOSKr5mC-6oelrx6HypmTw4CO5dXSk"
+TELEGRAM_CHAT_ID = "-1002500685386"
+
 TOKEN_CHECK_INTERVAL = 60  # seconds
 LIQUIDITY_SPIKE_THRESHOLD = 10000
 VOLUME_SPIKE_MULTIPLIER = 3  # spike must exceed 3x average rate
@@ -23,7 +27,17 @@ def get_recent_tokens():
     }]
 
 def send_alert(token, reason):
-    print(f"🚨 ALERT for {token['address']}: {reason}")
+    message = f"🚨 ALERT for {token['address']}\n{reason}"
+    print(message)
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message
+    }
+    try:
+        requests.post(url, data=payload)
+    except Exception as e:
+        print(f"Failed to send Telegram message: {e}")
 
 def main():
     while True:
@@ -57,7 +71,6 @@ def main():
             volume_delta = current_volume - last_volume
             rate_per_minute = volume_delta / minutes_elapsed
 
-            # Update rolling rate history
             data["history"].append(rate_per_minute)
             if len(data["history"]) > 5:
                 data["history"].pop(0)
@@ -65,20 +78,16 @@ def main():
             avg_rate = sum(data["history"]) / len(data["history"])
             data["avg_rate"] = avg_rate
 
-            # 🔥 Adaptive spike logic
             if avg_rate > 0 and rate_per_minute > avg_rate * VOLUME_SPIKE_MULTIPLIER and current_volume > MIN_BASE_VOLUME:
                 send_alert(token, f"🔥 Volume surged to {int(rate_per_minute)} $/min (> {VOLUME_SPIKE_MULTIPLIER}x avg)")
 
-            # 🧊 Microcap trigger
             if current_volume < 15000 and volume_delta > 2000:
                 send_alert(token, "📈 Microcap token surged over $2K in volume!")
 
-            # 💧 Liquidity spike
             liquidity_delta = current_liquidity - last_liquidity
             if liquidity_delta >= LIQUIDITY_SPIKE_THRESHOLD and token.get("liquidity_added_tx"):
                 send_alert(token, f"💧 Liquidity spike: +${liquidity_delta:,} added (locked)")
 
-            # Update tracking data
             data["last_volume"] = current_volume
             data["last_time"] = now
             data["last_liquidity"] = current_liquidity
