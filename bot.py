@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 TELEGRAM_BOT_TOKEN = "7959789156:AAGKNNOSKr5mC-6oelrx6HypmTw4CO5dXSk"
 TELEGRAM_CHAT_ID = "-1002500685386"
 
-TOKEN_CHECK_INTERVAL = 60  # seconds
+TOKEN_CHECK_INTERVAL = 1  # seconds
 LIQUIDITY_SPIKE_THRESHOLD = 10000
 VOLUME_SPIKE_MULTIPLIER = 3  # spike must exceed 3x average rate
 MIN_BASE_VOLUME = 2000  # to trigger alerts for microcap tokens
