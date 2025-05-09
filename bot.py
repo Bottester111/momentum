@@ -28,8 +28,8 @@ def get_recent_tokens():
                 "address": pair.get("pairAddress"),
                 "volume": pair.get("volume", {}).get("h1", 0),
                 "liquidity": pair.get("liquidity", {}).get("usd", 0),
-                "tax": None,
-                "locked": None,
+                "tax": 0,
+                "locked": True,
                 "liquidity_added_tx": None
             }
             tokens.append(token_info)
@@ -60,7 +60,7 @@ def main():
 
         for token in tokens:
             addr = token["address"]
-            if token["tax"] > 10 or not token["locked"]:
+            if (token.get("tax") or 0) > 10 or not token.get("locked", True):
                 continue
 
             current_volume = token["volume"]
