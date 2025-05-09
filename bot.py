@@ -47,7 +47,7 @@ def get_recent_tokens():
                     "url": pair.get("url", ""),
                 }
                 if token_info["volume24h"] >= 5000:
-                tokens.append(token_info)
+                    tokens.append(token_info)
         return tokens
     except Exception as e:
         print(f"❌ Error fetching data: {e}")
