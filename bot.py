@@ -54,28 +54,22 @@ def get_recent_tokens():
         return []
 
 def send_alert(token, reason):
-    message = (
-        f"🚨 *{token['name']}* (`{token['symbol']}`)
-"
-        f"{reason}
+    message = f"""🚨 *{token['name']}* (`{token['symbol']}`)
+{reason}
 
-"
-        f"*FDV:* ${int(token['fdv']):,}
-"
-        f"*24h Volume:* ${int(token['volume24h']):,}
-"
-        f"*1h Volume:* ${int(token['volume']):,}
-"
-        f"*Liquidity:* ${int(token['liquidity']):,}
-"
-        f"*1h Change:* {token['priceChange1h']}%
-"
-        f"*24h Change:* {token['priceChange24h']}%
-"
-        f"[📊 View Chart]({token['url']})"
-    )
+*FDV:* ${int(token['fdv']):,}
+*24h Volume:* ${int(token['volume24h']):,}
+*1h Volume:* ${int(token['volume']):,}
+*Liquidity:* ${int(token['liquidity']):,}
+*1h Change:* {token['priceChange1h']}%
+*24h Change:* {token['priceChange24h']}%
+
+[📊 View Chart]({token['url']})"""
     print(message)
     try:
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
+    except Exception as e:
+        print(f"❌ Failed to send alert: {e}")
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
     except Exception as e:
         print(f"❌ Failed to send alert: {e}")
