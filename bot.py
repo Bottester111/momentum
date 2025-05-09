@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 TELEGRAM_BOT_TOKEN = "7959789156:AAGKNNOSKr5mC-6oelrx6HypmTw4CO5dXSk"
 TELEGRAM_CHAT_ID = "-1002500685386"
 
-TOKEN_CHECK_INTERVAL = 1  # seconds
+TOKEN_CHECK_INTERVAL = 60  # seconds
 LIQUIDITY_SPIKE_THRESHOLD = 10000
 VOLUME_SPIKE_MULTIPLIER = 3  # spike must exceed 3x average rate
 MIN_BASE_VOLUME = 2000  # to trigger alerts for microcap tokens
@@ -16,15 +16,29 @@ tracked_tokens = {}
 print("🚀 Advanced Momentum Bot Starting...")
 
 def get_recent_tokens():
-    # Replace with real API call
-    return [{
-        "address": "0x123",
-        "volume": 7000,
-        "liquidity": 22000,
-        "tax": 5,
-        "locked": True,
-        "liquidity_added_tx": True
-    }]
+    url = "https://api.dexscreener.com/latest/dex/search/?q=abstract"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        tokens = []
+
+        for pair in data.get("pairs", []):
+            token_info = {
+                "address": pair.get("pairAddress"),
+                "volume": pair.get("volume", {}).get("h1", 0),
+                "liquidity": pair.get("liquidity", {}).get("usd", 0),
+                "tax": None,
+                "locked": None,
+                "liquidity_added_tx": None
+            }
+            tokens.append(token_info)
+
+        return tokens
+
+    except requests.RequestException as e:
+        print(f"Error fetching data from Dexscreener: {e}")
+        return []
 
 def send_alert(token, reason):
     message = f"🚨 ALERT for {token['address']}\n{reason}"
