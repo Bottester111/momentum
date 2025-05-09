@@ -1,19 +1,29 @@
+
 import requests
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
+from telegram import Bot
 
-# --- Telegram Config ---
+# --- Telegram Setup ---
 TELEGRAM_BOT_TOKEN = "7959789156:AAGKNNOSKr5mC-6oelrx6HypmTw4CO5dXSk"
 TELEGRAM_CHAT_ID = "-1002500685386"
 
-TOKEN_CHECK_INTERVAL = 60  # seconds
-LIQUIDITY_SPIKE_THRESHOLD = 10000
-VOLUME_SPIKE_MULTIPLIER = 3  # spike must exceed 3x average rate
-MIN_BASE_VOLUME = 2000  # to trigger alerts for microcap tokens
+bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
+try:
+    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="✅ Expert Momentum Bot started!")
+except Exception as e:
+    print(f"❌ Failed to send Telegram startup message: {e}")
+
+# --- Configurable Parameters ---
+TOKEN_CHECK_INTERVAL = 5  # seconds
+VOLUME_SPIKE_MULTIPLIER = 2.5
+LIQUIDITY_SPIKE_PERCENT = 50
+LIQUIDITY_SPIKE_ABSOLUTE = 5000
+VOLUME_HISTORY_WINDOW = 5  # recent checks stored
+
+# --- Storage ---
 tracked_tokens = {}
-
-print("🚀 Advanced Momentum Bot Starting...")
 
 def get_recent_tokens():
     url = "https://api.dexscreener.com/latest/dex/search/?q=abstract"
@@ -22,89 +32,95 @@ def get_recent_tokens():
         response.raise_for_status()
         data = response.json()
         tokens = []
-
         for pair in data.get("pairs", []):
-            token_info = {
-                "address": pair.get("pairAddress"),
-                "volume": pair.get("volume", {}).get("h1", 0),
-                "liquidity": pair.get("liquidity", {}).get("usd", 0),
-                "tax": 0,
-                "locked": True,
-                "liquidity_added_tx": None
-            }
-            tokens.append(token_info)
-
+            if "moonshot" in pair.get("url", "").lower():
+                token_info = {
+                    "address": pair.get("pairAddress"),
+                    "name": pair.get("baseToken", {}).get("name", "Unknown"),
+                    "symbol": pair.get("baseToken", {}).get("symbol", "???"),
+                    "volume": pair.get("volume", {}).get("h1", 0),
+                "volume24h": pair.get("volume", {}).get("h24", 0),
+                "fdv": pair.get("fdv", 0),
+                "priceChange1h": pair.get("priceChange", {}).get("h1", 0),
+                "priceChange24h": pair.get("priceChange", {}).get("h24", 0),
+                    "liquidity": pair.get("liquidity", {}).get("usd", 0),
+                    "url": pair.get("url", ""),
+                }
+                if token_info["volume24h"] >= 5000:
+                tokens.append(token_info)
         return tokens
-
-    except requests.RequestException as e:
-        print(f"Error fetching data from Dexscreener: {e}")
+    except Exception as e:
+        print(f"❌ Error fetching data: {e}")
         return []
 
 def send_alert(token, reason):
-    message = f"🚨 ALERT for {token['address']}\n{reason}"
+    message = (
+        f"🚨 *{token['name']}* (`{token['symbol']}`)
+"
+        f"{reason}
+
+"
+        f"*FDV:* ${int(token['fdv']):,}
+"
+        f"*24h Volume:* ${int(token['volume24h']):,}
+"
+        f"*1h Volume:* ${int(token['volume']):,}
+"
+        f"*Liquidity:* ${int(token['liquidity']):,}
+"
+        f"*1h Change:* {token['priceChange1h']}%
+"
+        f"*24h Change:* {token['priceChange24h']}%
+"
+        f"[📊 View Chart]({token['url']})"
+    )
     print(message)
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message
-    }
     try:
-        requests.post(url, data=payload)
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
     except Exception as e:
-        print(f"Failed to send Telegram message: {e}")
+        print(f"❌ Failed to send alert: {e}")
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown")
+    except Exception as e:
+        print(f"❌ Failed to send alert: {e}")
 
 def main():
+    print("🚀 Expert Momentum Bot Running...")
     while True:
         tokens = get_recent_tokens()
         now = datetime.utcnow()
 
         for token in tokens:
             addr = token["address"]
-            if (token.get("tax") or 0) > 10 or not token.get("locked", True):
-                continue
-
-            current_volume = token["volume"]
-            current_liquidity = token["liquidity"]
+            vol = token["volume"]
+            liq = token["liquidity"]
 
             if addr not in tracked_tokens:
                 tracked_tokens[addr] = {
-                    "last_volume": current_volume,
-                    "last_time": now,
-                    "avg_rate": 0,
-                    "history": [],
-                    "last_liquidity": current_liquidity
+                    "volume_history": [],
+                    "last_liquidity": liq,
+                    "last_alert": None,
                 }
-                continue
 
-            data = tracked_tokens[addr]
-            last_volume = data["last_volume"]
-            last_time = data["last_time"]
-            last_liquidity = data["last_liquidity"]
-            minutes_elapsed = (now - last_time).total_seconds() / 60 or 1
+            history = tracked_tokens[addr]["volume_history"]
+            history.append(vol)
+            if len(history) > VOLUME_HISTORY_WINDOW:
+                history.pop(0)
 
-            volume_delta = current_volume - last_volume
-            rate_per_minute = volume_delta / minutes_elapsed
+            avg_volume = sum(history[:-1]) / max(len(history[:-1]), 1)
 
-            data["history"].append(rate_per_minute)
-            if len(data["history"]) > 5:
-                data["history"].pop(0)
+            # Volume Spike
+            if avg_volume > 0 and vol > avg_volume * VOLUME_SPIKE_MULTIPLIER:
+                send_alert(token, f"📈 *Volume spike detected!* (+${int(vol - avg_volume):,})")
 
-            avg_rate = sum(data["history"]) / len(data["history"])
-            data["avg_rate"] = avg_rate
+            # Liquidity Spike
+            prev_liq = tracked_tokens[addr]["last_liquidity"]
+            if prev_liq > 0:
+                liq_change = liq - prev_liq
+                liq_change_pct = (liq_change / prev_liq) * 100
+                if liq_change > LIQUIDITY_SPIKE_ABSOLUTE or liq_change_pct > LIQUIDITY_SPIKE_PERCENT:
+                    send_alert(token, f"💧 *Liquidity spike detected!* (+${int(liq_change):,}, {liq_change_pct:.1f}%)")
 
-            if avg_rate > 0 and rate_per_minute > avg_rate * VOLUME_SPIKE_MULTIPLIER and current_volume > MIN_BASE_VOLUME:
-                send_alert(token, f"🔥 Volume surged to {int(rate_per_minute)} $/min (> {VOLUME_SPIKE_MULTIPLIER}x avg)")
-
-            if current_volume < 15000 and volume_delta > 2000:
-                send_alert(token, "📈 Microcap token surged over $2K in volume!")
-
-            liquidity_delta = current_liquidity - last_liquidity
-            if liquidity_delta >= LIQUIDITY_SPIKE_THRESHOLD and token.get("liquidity_added_tx"):
-                send_alert(token, f"💧 Liquidity spike: +${liquidity_delta:,} added (locked)")
-
-            data["last_volume"] = current_volume
-            data["last_time"] = now
-            data["last_liquidity"] = current_liquidity
+            tracked_tokens[addr]["last_liquidity"] = liq
 
         time.sleep(TOKEN_CHECK_INTERVAL)
 
